@@ -1,0 +1,13 @@
+dbt_project:
+  outputs:
+    dev:
+      dbname: mydatabase
+      host: database
+      pass: mypassword
+      port: 5432
+      schema: data_mart
+      threads: 1
+      type: postgres
+      user: myuser
+      connect_timeout: 30 # default 10 seconds
+  target: dev

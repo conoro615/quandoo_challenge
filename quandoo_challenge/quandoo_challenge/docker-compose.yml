@@ -1,0 +1,68 @@
+version: '3'
+services:
+
+  # define our services here
+
+  # postgres database to store our data
+  database:
+    image: postgres:latest
+    restart: always
+    environment:
+      POSTGRES_DB: mydatabase
+      POSTGRES_USER: myuser
+      POSTGRES_PASSWORD: mypassword
+      POSTGRES_HOST_AUTH_METHOD : trust # credentials defined here for now
+    ports:
+      - '5432:5432'
+    networks:
+      - docker-network  # uses the docker network defined below
+    healthcheck:  # use this health check to alert other services when to start
+      test: ["CMD-SHELL", "pg_isready -d mydatabase -U myuser"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - ./db/create_tables.sql:/docker-entrypoint-initdb.d/create_tables.sql # this volume runs on each build to create the tables
+
+  # simple pgadmin client to log in and look at data visually
+  pgadmin:
+    container_name: pgadmin4_container
+    image: dpage/pgadmin4
+    restart: always
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com
+      PGADMIN_DEFAULT_PASSWORD: root
+    ports:
+      - "5050:80"
+    networks:
+      - docker-network
+
+  # the python scraper application that will read restaurant and menu data and insert it in the database
+  scraper_app:
+    env_file: ./.env
+    build:
+      context: ./scraper_app/
+      dockerfile: Dockerfile
+    depends_on:
+      database:
+        condition: service_healthy # wait for the db to report that its healthy before starting
+    networks:
+      - docker-network # uses internal docker network
+    restart: on-failure:10
+  
+  # dbt project that will preform transformations on data inserted by the scraper app
+  dbt-project:
+    build:
+      context: ./dbt/dbt_project/
+      dockerfile: Dockerfile
+    depends_on:
+      scraper_app:
+        condition : service_completed_successfully # wait for scraper app to complete before running
+    networks:
+      - docker-network
+
+# internally define a network for containers to communicate with each other more easily
+networks:
+  docker-network:
+    external: false
+    name: docker-network
